@@ -19,8 +19,21 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   
   try {
-    const publicKey = env.MASTERPAG_PUBLIC_KEY || 'pk_live_TyOexAHFCYOc7XweMd2c7c01Qx0nBZJh';
-    const secretKey = env.MASTERPAG_SECRET_KEY || 'sk_live_vWga85ttCDm41J0B9mwvrXkCwCoiKl9kMCELGLd4Msj1LagF';
+    // Usando as variáveis de ambiente configuradas no painel da Cloudflare
+    const publicKey = env.MASTERPAG_PUBLIC_KEY;
+    const secretKey = env.MASTERPAG_SECRET_KEY;
+    const baseUrl = 'https://api.masterpag.com/functions/v1';
+    
+    if (!publicKey || !secretKey) {
+      console.error('Erro: Variáveis de ambiente MASTERPAG_PUBLIC_KEY ou MASTERPAG_SECRET_KEY não configuradas.');
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Configuração de API incompleta no servidor.'
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
     
     const body = await request.json();
     
@@ -50,7 +63,7 @@ export async function onRequestPost(context) {
         cpf += digito1;
         soma = 0;
         for (let i = 0; i < 10; i++) soma += parseInt(cpf[i]) * (11 - i);
-        resto = soma % 11;
+        let resto = soma % 11;
         let digito2 = resto < 2 ? 0 : 11 - resto;
         cpf += digito2;
         return cpf;
@@ -82,8 +95,8 @@ export async function onRequestPost(context) {
         expirationDate: new Date(Date.now() + 15 * 60 * 1000).toISOString()
       }
     };
-
-    const response = await fetch('https://dcnmsoaogkbgkbwpldrp.supabase.co/functions/v1/pix-receive', {
+    
+    const response = await fetch(`${baseUrl}/pix-receive`, {
       method: 'POST',
       headers: {
         'x-public-key': publicKey,
