@@ -97,7 +97,7 @@ export async function onRequestPost(context) {
         supabase
           .from('payments')
           .insert([{
-            transaction_id: txId,
+            transaction_id: data.id,
             pix_code: data.pix.qrCode,
             status: 'pending',
             amount: body.amount || 38.90,

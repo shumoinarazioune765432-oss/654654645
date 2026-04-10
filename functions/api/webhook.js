@@ -26,62 +26,44 @@ export async function onRequestPost(context) {
 
     if (event === 'charge.paid') {
       const masterpagId = data.id;
-      const pixCode = data.pix?.qrCode;
       
       console.log(`Pagamento confirmado pela Masterpag: ${masterpagId}. Gravando status 'failed' conforme solicitado...`);
       
-      // Tentar atualizar o pagamento no Supabase usando busca por prefixo (like)
-      // Isso resolve o problema de IDs longos salvos no banco vs IDs curtos enviados pela Masterpag
-      
-      // Estratégia 1: Tentar pelo transaction_id (começando com o ID da Masterpag)
-      const updateByTxId = supabase
+      // Agora que masterpag.js salva apenas o UUID, podemos fazer um match exato.
+      const { data: updateData, error } = await supabase
         .from('payments')
         .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .like('transaction_id', `${masterpagId}%`);
+        .eq('transaction_id', masterpagId);
 
-      // Estratégia 2: Tentar pelo pix_code (começando com o ID da Masterpag)
-      const updateByPixCode = supabase
-        .from('payments')
-        .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .like('pix_code', `${masterpagId}%`);
-
-      // Estratégia 3: Se tivermos o pixCode completo no payload, tentar match exato
-      let updateByPixData = null;
-      if (pixCode) {
-        updateByPixData = supabase
-          .from('payments')
-          .update({ status: 'failed', updated_at: new Date().toISOString() })
-          .eq('pix_code', pixCode);
+      if (error) {
+        console.error('Erro ao atualizar pagamento no Supabase:', error);
+        // Não retorne um erro 500 para a Masterpag, pois ela pode tentar reenviar indefinidamente.
+        // Apenas logue o erro e retorne sucesso.
+        return new Response(JSON.stringify({ success: true, message: 'Erro interno ao processar o webhook.' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
       }
 
-      const promises = [updateByTxId, updateByPixCode];
-      if (updateByPixData) promises.push(updateByPixData);
-
-      context.waitUntil(
-        Promise.all(promises).then(results => {
-          results.forEach((res, index) => {
-            if (res.error) console.error(`Erro na tentativa ${index}:`, res.error);
-            else console.log(`Tentativa ${index} concluída com sucesso. Linhas afetadas: ${res.count || 'N/A'}`);
-          });
-        })
-      );
+      console.log('Pagamento atualizado no Supabase. Linhas afetadas:', updateData ? updateData.length : 0);
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'Webhook recebido e processamento iniciado',
+        message: 'Webhook recebido e pagamento atualizado com sucesso',
         id: masterpagId
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    // Retorna sucesso para outros eventos não tratados para que a Masterpag não reenvie.
+    return new Response(JSON.stringify({ success: true, message: 'Evento não tratado.' }), {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
     console.error('Erro crítico no webhook:', error);
     return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 200,
+      status: 200, // Retorna 200 para evitar retentativas da Masterpag.
       headers: { 'Content-Type': 'application/json' }
     });
   }
