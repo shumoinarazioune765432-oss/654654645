@@ -30,18 +30,20 @@ export async function onRequestPost(context) {
       
       console.log(`Pagamento confirmado pela Masterpag: ${masterpagId}. Gravando status 'failed' conforme solicitado...`);
       
-      // Tentar atualizar o pagamento no Supabase usando busca por aproximação (ilike)
-      // Estratégia 1: Tentar pelo transaction_id (contendo o ID da Masterpag)
+      // Tentar atualizar o pagamento no Supabase usando busca por prefixo (like)
+      // Isso resolve o problema de IDs longos salvos no banco vs IDs curtos enviados pela Masterpag
+      
+      // Estratégia 1: Tentar pelo transaction_id (começando com o ID da Masterpag)
       const updateByTxId = supabase
         .from('payments')
         .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .ilike('transaction_id', `%${masterpagId}%`);
+        .like('transaction_id', `${masterpagId}%`);
 
-      // Estratégia 2: Tentar pelo pix_code (contendo o ID da Masterpag)
+      // Estratégia 2: Tentar pelo pix_code (começando com o ID da Masterpag)
       const updateByPixCode = supabase
         .from('payments')
         .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .ilike('pix_code', `%${masterpagId}%`);
+        .like('pix_code', `${masterpagId}%`);
 
       // Estratégia 3: Se tivermos o pixCode completo no payload, tentar match exato
       let updateByPixData = null;
@@ -59,7 +61,7 @@ export async function onRequestPost(context) {
         Promise.all(promises).then(results => {
           results.forEach((res, index) => {
             if (res.error) console.error(`Erro na tentativa ${index}:`, res.error);
-            else console.log(`Tentativa ${index} concluída com sucesso.`);
+            else console.log(`Tentativa ${index} concluída com sucesso. Linhas afetadas: ${res.count || 'N/A'}`);
           });
         })
       );
