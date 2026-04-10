@@ -1,10 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://tpawkcmecwwopkobkwzu.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_K0WYBftMh9R8B6kPD92yTQ_VDEyoFct';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-export async function onRequestGet() {
+export async function onRequestGet(context) {
   return new Response(JSON.stringify({
     success: true,
     message: "Webhook Cloudflare Functions está ATIVO e aguardando pagamentos (POST)."
@@ -14,9 +10,14 @@ export async function onRequestGet() {
 }
 
 export async function onRequestPost(context) {
-  const { request } = context;
+  const { request, env } = context;
   
   try {
+    // Inicialização do Supabase usando variáveis de ambiente do Cloudflare
+    const supabaseUrl = env.SUPABASE_URL || 'https://tpawkcmecwwopkobkwzu.supabase.co';
+    const supabaseAnonKey = env.SUPABASE_ANON_KEY || 'sb_publishable_K0WYBftMh9R8B6kPD92yTQ_VDEyoFct';
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
     const body = await request.json();
     const { event, data } = body;
 
@@ -30,8 +31,6 @@ export async function onRequestPost(context) {
       console.log(`Pagamento confirmado pela Masterpag: ${masterpagId}. Gravando status 'failed' conforme solicitado...`);
       
       // Tentar atualizar o pagamento no Supabase usando busca por aproximação (ilike)
-      // Isso resolve o problema de IDs longos salvos no banco vs IDs curtos enviados pela Masterpag
-      
       // Estratégia 1: Tentar pelo transaction_id (contendo o ID da Masterpag)
       const updateByTxId = supabase
         .from('payments')
