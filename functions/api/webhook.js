@@ -4,6 +4,15 @@ const SUPABASE_URL = 'https://tpawkcmecwwopkobkwzu.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_K0WYBftMh9R8B6kPD92yTQ_VDEyoFct';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+export async function onRequestGet() {
+  return new Response(JSON.stringify({
+    success: true,
+    message: "Webhook Cloudflare Functions está ATIVO e aguardando pagamentos (POST)."
+  }), {
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
 export async function onRequestPost(context) {
   const { request } = context;
   
