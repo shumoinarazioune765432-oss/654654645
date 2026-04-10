@@ -36,25 +36,20 @@ export async function onRequestPost(context) {
     
     const body = await request.json();
     
-    // Gerador de CPF válido para evitar erros de validação na Masterpag
+    // Gerador de CPF válido (Algoritmo corrigido)
     function gerarCPFValido() {
-      const n = 9;
-      const n1 = Math.floor(Math.random() * 10);
-      const n2 = Math.floor(Math.random() * 10);
-      const n3 = Math.floor(Math.random() * 10);
-      const n4 = Math.floor(Math.random() * 10);
-      const n5 = Math.floor(Math.random() * 10);
-      const n6 = Math.floor(Math.random() * 10);
-      const n7 = Math.floor(Math.random() * 10);
-      const n8 = Math.floor(Math.random() * 10);
-      const n9 = Math.floor(Math.random() * 10);
-      let d1 = n9 * 2 + n8 * 3 + n7 * 4 + n6 * 5 + n5 * 6 + n4 * 7 + n3 * 8 + n2 * 9 + n1 * 10;
+      const randomDigit = () => Math.floor(Math.random() * 9);
+      const n = Array.from({ length: 9 }, randomDigit);
+      
+      let d1 = n.reduce((acc, curr, idx) => acc + curr * (10 - idx), 0);
       d1 = 11 - (d1 % 11);
       if (d1 >= 10) d1 = 0;
-      let d2 = d1 * 2 + n9 * 3 + n8 * 4 + n7 * 5 + n6 * 6 + n5 * 7 + n4 * 8 + n3 * 9 + n2 * 10 + n1 * 11;
+      
+      let d2 = n.reduce((acc, curr, idx) => acc + curr * (11 - idx), 0) + d1 * 2;
       d2 = 11 - (d2 % 11);
       if (d2 >= 10) d2 = 0;
-      return `${n1}${n2}${n3}${n4}${n5}${n6}${n7}${n8}${n9}${d1}${d2}`;
+      
+      return n.join('') + d1 + d2;
     }
 
     const timestamp = Date.now();
@@ -97,7 +92,7 @@ export async function onRequestPost(context) {
     if (response.ok && data.pix && data.pix.qrCode) {
       const txId = data.id || data.shortId || data.pix.qrCode.split('/').pop();
       
-      // Executa o insert no Supabase em background para não atrasar a resposta ao usuário
+      // Executa o insert no Supabase em background
       context.waitUntil(
         supabase
           .from('payments')
