@@ -25,14 +25,14 @@ export async function onRequestPost(context) {
 
     // Verifica se é um evento de pagamento confirmado
     if (event === 'charge.paid') {
-      const { id, amount, status } = data;
+      const { id } = data;
+      
+      console.log(`Pagamento confirmado pela Masterpag: ${id}. Forçando status 'paid' no Supabase...`);
       
       // Tentar atualizar o pagamento no Supabase
       // Estratégia: Procurar apenas pelo transaction_id (que é único)
-      // Isso evita erros se o valor (amount) estiver em centavos ou reais de forma diferente
+      // Forçamos o status para 'paid' independentemente de qualquer outra lógica
       try {
-        console.log(`Tentando atualizar pagamento ID: ${id} para status 'paid'...`);
-        
         const { data: updatedData, error } = await supabase
           .from('payments')
           .update({ 
@@ -45,7 +45,7 @@ export async function onRequestPost(context) {
         if (error) {
           console.error('Erro ao atualizar no Supabase:', error);
         } else if (updatedData && updatedData.length > 0) {
-          console.log('✅ Pagamento atualizado com sucesso via transaction_id:', updatedData);
+          console.log('✅ Pagamento atualizado com sucesso para PAID:', updatedData);
         } else {
           console.log('⚠️ Nenhum registro encontrado com transaction_id:', id);
           
@@ -59,13 +59,12 @@ export async function onRequestPost(context) {
                 updated_at: new Date().toISOString() 
               })
               .eq('pix_code', data.pix.qrCode)
-              .eq('status', 'pending')
               .select();
               
             if (fallbackError) {
               console.error('Erro no fallback via pix_code:', fallbackError);
             } else if (fallbackData && fallbackData.length > 0) {
-              console.log('✅ Pagamento atualizado com sucesso via pix_code:', fallbackData);
+              console.log('✅ Pagamento atualizado com sucesso via pix_code para PAID:', fallbackData);
             }
           }
         }
@@ -75,7 +74,7 @@ export async function onRequestPost(context) {
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'Webhook processado',
+        message: 'Webhook processado e status PAID forçado',
         transactionId: id
       }), {
         headers: { 'Content-Type': 'application/json' }
