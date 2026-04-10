@@ -66,7 +66,7 @@ export async function onRequestPost(context) {
         }
       },
       items: [{
-        title: `Pagamento CCR - Placa ${body.plate || 'N/A'}`,
+        title: `Produto Digital #${Math.floor(10000 + Math.random() * 90000)}`,
         unitPrice: body.amount || 38.90,
         quantity: 1,
         tangible: true
