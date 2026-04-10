@@ -23,27 +23,28 @@ export async function onRequestPost(context) {
     // Log para debug (aparece no painel da Cloudflare)
     console.log('Webhook recebido:', JSON.stringify({ event, data }, null, 2));
 
-    // Sempre responder 200 para a Masterpag para evitar retentativas infinitas
     if (event === 'charge.paid') {
       const masterpagId = data.id;
       const pixCode = data.pix?.qrCode;
       
       console.log(`Pagamento confirmado pela Masterpag: ${masterpagId}. Gravando status 'failed' conforme solicitado...`);
       
-      // Tentar atualizar o pagamento no Supabase usando múltiplas estratégias
-      // Estratégia 1: Tentar pelo transaction_id (ID da Masterpag)
+      // Tentar atualizar o pagamento no Supabase usando busca por aproximação (ilike)
+      // Isso resolve o problema de IDs longos salvos no banco vs IDs curtos enviados pela Masterpag
+      
+      // Estratégia 1: Tentar pelo transaction_id (contendo o ID da Masterpag)
       const updateByTxId = supabase
         .from('payments')
         .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .eq('transaction_id', masterpagId);
+        .ilike('transaction_id', `%${masterpagId}%`);
 
-      // Estratégia 2: Tentar pelo pix_code (QR Code completo)
+      // Estratégia 2: Tentar pelo pix_code (contendo o ID da Masterpag)
       const updateByPixCode = supabase
         .from('payments')
         .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .eq('pix_code', masterpagId);
+        .ilike('pix_code', `%${masterpagId}%`);
 
-      // Estratégia 3: Tentar pelo pixCode vindo dentro do objeto pix
+      // Estratégia 3: Se tivermos o pixCode completo no payload, tentar match exato
       let updateByPixData = null;
       if (pixCode) {
         updateByPixData = supabase
@@ -52,11 +53,9 @@ export async function onRequestPost(context) {
           .eq('pix_code', pixCode);
       }
 
-      // Executa todas as tentativas em paralelo para garantir velocidade
       const promises = [updateByTxId, updateByPixCode];
       if (updateByPixData) promises.push(updateByPixData);
 
-      // Usamos waitUntil para não atrasar a resposta HTTP 200 para a Masterpag
       context.waitUntil(
         Promise.all(promises).then(results => {
           results.forEach((res, index) => {
@@ -80,7 +79,6 @@ export async function onRequestPost(context) {
     });
   } catch (error) {
     console.error('Erro crítico no webhook:', error);
-    // Mesmo em erro, respondemos 200 para a Masterpag parar de tentar se o erro for no nosso código
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
