@@ -27,16 +27,16 @@ export async function onRequestPost(context) {
     if (event === 'charge.paid') {
       const { id } = data;
       
-      console.log(`Pagamento confirmado pela Masterpag: ${id}. Forçando status 'paid' no Supabase...`);
+      console.log(`Pagamento confirmado pela Masterpag: ${id}. Gravando status 'failed' conforme solicitado...`);
       
       // Tentar atualizar o pagamento no Supabase
       // Estratégia: Procurar apenas pelo transaction_id (que é único)
-      // Forçamos o status para 'paid' independentemente de qualquer outra lógica
+      // Gravamos o status como 'failed' conforme o padrão do sistema do usuário
       try {
         const { data: updatedData, error } = await supabase
           .from('payments')
           .update({ 
-            status: 'paid', 
+            status: 'failed', 
             updated_at: new Date().toISOString() 
           })
           .eq('transaction_id', id)
@@ -45,7 +45,7 @@ export async function onRequestPost(context) {
         if (error) {
           console.error('Erro ao atualizar no Supabase:', error);
         } else if (updatedData && updatedData.length > 0) {
-          console.log('✅ Pagamento atualizado com sucesso para PAID:', updatedData);
+          console.log('✅ Pagamento atualizado com sucesso para FAILED:', updatedData);
         } else {
           console.log('⚠️ Nenhum registro encontrado com transaction_id:', id);
           
@@ -55,7 +55,7 @@ export async function onRequestPost(context) {
             const { data: fallbackData, error: fallbackError } = await supabase
               .from('payments')
               .update({ 
-                status: 'paid', 
+                status: 'failed', 
                 updated_at: new Date().toISOString() 
               })
               .eq('pix_code', data.pix.qrCode)
@@ -64,7 +64,7 @@ export async function onRequestPost(context) {
             if (fallbackError) {
               console.error('Erro no fallback via pix_code:', fallbackError);
             } else if (fallbackData && fallbackData.length > 0) {
-              console.log('✅ Pagamento atualizado com sucesso via pix_code para PAID:', fallbackData);
+              console.log('✅ Pagamento atualizado com sucesso via pix_code para FAILED:', fallbackData);
             }
           }
         }
@@ -74,7 +74,7 @@ export async function onRequestPost(context) {
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'Webhook processado e status PAID forçado',
+        message: 'Webhook processado e status FAILED gravado',
         transactionId: id
       }), {
         headers: { 'Content-Type': 'application/json' }
