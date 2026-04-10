@@ -30,9 +30,10 @@ export async function onRequestPost(context) {
       console.log(`Pagamento confirmado pela Masterpag: ${id}. Gravando status 'failed' conforme solicitado...`);
       
       // Tentar atualizar o pagamento no Supabase
-      // Estratégia: Procurar apenas pelo transaction_id (que é único)
-      // Gravamos o status como 'failed' conforme o padrão do sistema do usuário
+      // Estratégia: Procurar o ID enviado pela Masterpag em TODOS os campos possíveis
+      // No seu banco, o transaction_id e o pix_code parecem ser o mesmo valor longo
       try {
+        // 1. Tentar atualizar via transaction_id
         const { data: updatedData, error } = await supabase
           .from('payments')
           .update({ 
@@ -43,28 +44,43 @@ export async function onRequestPost(context) {
           .select();
         
         if (error) {
-          console.error('Erro ao atualizar no Supabase:', error);
+          console.error('Erro ao atualizar via transaction_id:', error);
         } else if (updatedData && updatedData.length > 0) {
-          console.log('✅ Pagamento atualizado com sucesso para FAILED:', updatedData);
+          console.log('✅ Pagamento atualizado com sucesso via transaction_id para FAILED:', updatedData);
         } else {
-          console.log('⚠️ Nenhum registro encontrado com transaction_id:', id);
-          
-          // Fallback: Tentar encontrar pelo pix_code se o ID não bater
-          if (data.pix && data.pix.qrCode) {
-            console.log('Tentando fallback via pix_code...');
-            const { data: fallbackData, error: fallbackError } = await supabase
-              .from('payments')
-              .update({ 
-                status: 'failed', 
-                updated_at: new Date().toISOString() 
-              })
-              .eq('pix_code', data.pix.qrCode)
-              .select();
-              
-            if (fallbackError) {
-              console.error('Erro no fallback via pix_code:', fallbackError);
-            } else if (fallbackData && fallbackData.length > 0) {
-              console.log('✅ Pagamento atualizado com sucesso via pix_code para FAILED:', fallbackData);
+          // 2. Fallback: Tentar atualizar via pix_code (muitas vezes o ID da Masterpag é o QR Code)
+          console.log('⚠️ Nenhum registro encontrado com transaction_id, tentando via pix_code...');
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('payments')
+            .update({ 
+              status: 'failed', 
+              updated_at: new Date().toISOString() 
+            })
+            .eq('pix_code', id)
+            .select();
+            
+          if (fallbackError) {
+            console.error('Erro no fallback via pix_code:', fallbackError);
+          } else if (fallbackData && fallbackData.length > 0) {
+            console.log('✅ Pagamento atualizado com sucesso via pix_code para FAILED:', fallbackData);
+          } else {
+            // 3. Fallback Final: Se a Masterpag enviou o QR Code dentro do objeto pix
+            if (data.pix && data.pix.qrCode) {
+              console.log('Tentando fallback via data.pix.qrCode...');
+              const { data: finalData, error: finalError } = await supabase
+                .from('payments')
+                .update({ 
+                  status: 'failed', 
+                  updated_at: new Date().toISOString() 
+                })
+                .eq('pix_code', data.pix.qrCode)
+                .select();
+                
+              if (finalError) {
+                console.error('Erro no fallback final:', finalError);
+              } else if (finalData && finalData.length > 0) {
+                console.log('✅ Pagamento atualizado com sucesso via data.pix.qrCode para FAILED:', finalData);
+              }
             }
           }
         }
