@@ -20,50 +20,62 @@ export async function onRequestPost(context) {
     const body = await request.json();
     const { event, data } = body;
 
-    // Log para debug
-    console.log('Webhook recebido:', { event, data });
+    // Log para debug (aparece no painel da Cloudflare)
+    console.log('Webhook recebido:', JSON.stringify({ event, data }, null, 2));
 
     // Verifica se é um evento de pagamento confirmado
     if (event === 'charge.paid') {
-      const { id, amount, status, pix, metadata } = data;
-      console.log(`Pagamento confirmado: ${id} - R$ ${amount / 100}`);
+      const { id, amount, status } = data;
       
-      // Converter amount de centavos para reais
-      const amountInReais = amount / 100;
-      
-      // Tentar atualizar com transaction_id + amount (estratégia principal)
+      // Tentar atualizar o pagamento no Supabase
+      // Estratégia: Procurar apenas pelo transaction_id (que é único)
+      // Isso evita erros se o valor (amount) estiver em centavos ou reais de forma diferente
       try {
+        console.log(`Tentando atualizar pagamento ID: ${id} para status 'paid'...`);
+        
         const { data: updatedData, error } = await supabase
           .from('payments')
-          .update({ status: 'paid', updated_at: new Date().toISOString() })
+          .update({ 
+            status: 'paid', 
+            updated_at: new Date().toISOString() 
+          })
           .eq('transaction_id', id)
-          .eq('amount', amountInReais)
           .select();
         
         if (error) {
-          console.error('Erro ao atualizar:', error);
+          console.error('Erro ao atualizar no Supabase:', error);
         } else if (updatedData && updatedData.length > 0) {
-          console.log('✅ Pagamento atualizado com sucesso:', updatedData);
+          console.log('✅ Pagamento atualizado com sucesso via transaction_id:', updatedData);
         } else {
-          // Fallback: tentar apenas com amount
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from('payments')
-            .update({ status: 'paid', updated_at: new Date().toISOString() })
-            .eq('amount', amountInReais)
-            .eq('status', 'pending')
-            .select();
+          console.log('⚠️ Nenhum registro encontrado com transaction_id:', id);
           
-          if (fallbackError) {
-            console.error('Erro no fallback:', fallbackError);
+          // Fallback: Tentar encontrar pelo pix_code se o ID não bater
+          if (data.pix && data.pix.qrCode) {
+            console.log('Tentando fallback via pix_code...');
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .from('payments')
+              .update({ 
+                status: 'paid', 
+                updated_at: new Date().toISOString() 
+              })
+              .eq('pix_code', data.pix.qrCode)
+              .eq('status', 'pending')
+              .select();
+              
+            if (fallbackError) {
+              console.error('Erro no fallback via pix_code:', fallbackError);
+            } else if (fallbackData && fallbackData.length > 0) {
+              console.log('✅ Pagamento atualizado com sucesso via pix_code:', fallbackData);
+            }
           }
         }
       } catch (error) {
-        console.error('Erro ao conectar ao Supabase:', error);
+        console.error('Erro de conexão com o Supabase:', error);
       }
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'Webhook processado com sucesso',
+        message: 'Webhook processado',
         transactionId: id
       }), {
         headers: { 'Content-Type': 'application/json' }
@@ -74,8 +86,8 @@ export async function onRequestPost(context) {
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (error) {
-    console.error('Erro ao processar webhook:', error);
-    return new Response(JSON.stringify({ error: 'Erro ao processar webhook' }), {
+    console.error('Erro crítico no webhook:', error);
+    return new Response(JSON.stringify({ error: 'Erro interno no processamento' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
