@@ -23,75 +23,53 @@ export async function onRequestPost(context) {
     // Log para debug (aparece no painel da Cloudflare)
     console.log('Webhook recebido:', JSON.stringify({ event, data }, null, 2));
 
-    // Verifica se é um evento de pagamento confirmado
+    // Sempre responder 200 para a Masterpag para evitar retentativas infinitas
     if (event === 'charge.paid') {
-      const { id } = data;
+      const masterpagId = data.id;
+      const pixCode = data.pix?.qrCode;
       
-      console.log(`Pagamento confirmado pela Masterpag: ${id}. Gravando status 'failed' conforme solicitado...`);
+      console.log(`Pagamento confirmado pela Masterpag: ${masterpagId}. Gravando status 'failed' conforme solicitado...`);
       
-      // Tentar atualizar o pagamento no Supabase
-      // Estratégia: Procurar o ID enviado pela Masterpag em TODOS os campos possíveis
-      // No seu banco, o transaction_id e o pix_code parecem ser o mesmo valor longo
-      try {
-        // 1. Tentar atualizar via transaction_id
-        const { data: updatedData, error } = await supabase
+      // Tentar atualizar o pagamento no Supabase usando múltiplas estratégias
+      // Estratégia 1: Tentar pelo transaction_id (ID da Masterpag)
+      const updateByTxId = supabase
+        .from('payments')
+        .update({ status: 'failed', updated_at: new Date().toISOString() })
+        .eq('transaction_id', masterpagId);
+
+      // Estratégia 2: Tentar pelo pix_code (QR Code completo)
+      const updateByPixCode = supabase
+        .from('payments')
+        .update({ status: 'failed', updated_at: new Date().toISOString() })
+        .eq('pix_code', masterpagId);
+
+      // Estratégia 3: Tentar pelo pixCode vindo dentro do objeto pix
+      let updateByPixData = null;
+      if (pixCode) {
+        updateByPixData = supabase
           .from('payments')
-          .update({ 
-            status: 'failed', 
-            updated_at: new Date().toISOString() 
-          })
-          .eq('transaction_id', id)
-          .select();
-        
-        if (error) {
-          console.error('Erro ao atualizar via transaction_id:', error);
-        } else if (updatedData && updatedData.length > 0) {
-          console.log('✅ Pagamento atualizado com sucesso via transaction_id para FAILED:', updatedData);
-        } else {
-          // 2. Fallback: Tentar atualizar via pix_code (muitas vezes o ID da Masterpag é o QR Code)
-          console.log('⚠️ Nenhum registro encontrado com transaction_id, tentando via pix_code...');
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from('payments')
-            .update({ 
-              status: 'failed', 
-              updated_at: new Date().toISOString() 
-            })
-            .eq('pix_code', id)
-            .select();
-            
-          if (fallbackError) {
-            console.error('Erro no fallback via pix_code:', fallbackError);
-          } else if (fallbackData && fallbackData.length > 0) {
-            console.log('✅ Pagamento atualizado com sucesso via pix_code para FAILED:', fallbackData);
-          } else {
-            // 3. Fallback Final: Se a Masterpag enviou o QR Code dentro do objeto pix
-            if (data.pix && data.pix.qrCode) {
-              console.log('Tentando fallback via data.pix.qrCode...');
-              const { data: finalData, error: finalError } = await supabase
-                .from('payments')
-                .update({ 
-                  status: 'failed', 
-                  updated_at: new Date().toISOString() 
-                })
-                .eq('pix_code', data.pix.qrCode)
-                .select();
-                
-              if (finalError) {
-                console.error('Erro no fallback final:', finalError);
-              } else if (finalData && finalData.length > 0) {
-                console.log('✅ Pagamento atualizado com sucesso via data.pix.qrCode para FAILED:', finalData);
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Erro de conexão com o Supabase:', error);
+          .update({ status: 'failed', updated_at: new Date().toISOString() })
+          .eq('pix_code', pixCode);
       }
+
+      // Executa todas as tentativas em paralelo para garantir velocidade
+      const promises = [updateByTxId, updateByPixCode];
+      if (updateByPixData) promises.push(updateByPixData);
+
+      // Usamos waitUntil para não atrasar a resposta HTTP 200 para a Masterpag
+      context.waitUntil(
+        Promise.all(promises).then(results => {
+          results.forEach((res, index) => {
+            if (res.error) console.error(`Erro na tentativa ${index}:`, res.error);
+            else console.log(`Tentativa ${index} concluída com sucesso.`);
+          });
+        })
+      );
 
       return new Response(JSON.stringify({
         success: true,
-        message: 'Webhook processado e status FAILED gravado',
-        transactionId: id
+        message: 'Webhook recebido e processamento iniciado',
+        id: masterpagId
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
@@ -102,8 +80,9 @@ export async function onRequestPost(context) {
     });
   } catch (error) {
     console.error('Erro crítico no webhook:', error);
-    return new Response(JSON.stringify({ error: 'Erro interno no processamento' }), {
-      status: 500,
+    // Mesmo em erro, respondemos 200 para a Masterpag parar de tentar se o erro for no nosso código
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
   }
