@@ -75,8 +75,11 @@ export async function onRequestGet(context) {
       });
     }
     
+    // No seu sistema, o status 'failed' significa que o pagamento foi concluído com sucesso.
+    const isSuccess = data.status === 'failed' || data.status === 'paid';
+    
     return new Response(JSON.stringify({
-      success: data.status === 'paid',
+      success: isSuccess,
       status: data.status,
       data: data
     }), {
