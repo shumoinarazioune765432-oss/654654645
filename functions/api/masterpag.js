@@ -90,8 +90,26 @@ export async function onRequestPost(context) {
     const data = await response.json();
     
     if (response.ok && data.pix && data.pix.qrCode) {
-      const txId = data.id || data.shortId || data.pix.qrCode.split('/').pop();
-      
+      let txId = null;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      // Tenta extrair o UUID de data.id primeiro
+      if (data.id && uuidRegex.test(data.id)) {
+        txId = data.id;
+      } else if (data.pix.qrCode) {
+        // Se data.id não for um UUID válido, tenta extrair do qrCode
+        const uuidMatch = data.pix.qrCode.match(uuidRegex);
+        if (uuidMatch && uuidMatch[0]) {
+          txId = uuidMatch[0];
+        }
+      }
+
+      // Fallback: se ainda não encontrou, usa o data.id original (pode ser o longo)
+      // Isso é menos ideal, mas garante que o campo não seja nulo.
+      if (!txId) {
+        txId = data.id || data.pix.qrCode.split('/').pop();
+      }
+
       // Executa o insert no Supabase em background
       context.waitUntil(
         supabase
